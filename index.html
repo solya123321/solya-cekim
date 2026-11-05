@@ -27,6 +27,7 @@
   font-family: "Barlow Semi Condensed", -apple-system, "Segoe UI", Roboto, sans-serif;
 }
 * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+html { -webkit-text-size-adjust: 100%; text-size-adjust: 100%; }
 html, body { height: 100%; margin: 0; background: var(--komur); }
 body { overflow: hidden; overscroll-behavior: none; }
 button, textarea { font: inherit; color: inherit; }
@@ -483,7 +484,7 @@ async function kaydiBaslat() {
   kaydedici = new MediaRecorder(akim, { mimeType: bicim || undefined, videoBitsPerSecond: BITRATE, audioBitsPerSecond: 192_000 });
   kaydedici.ondataavailable = (o) => { if (o.data.size) parcalar.push(o.data); };
   kaydedici.onstop = kayitBitti;
-  kaydedici.start(1000);
+  kaydedici.start();
 
   cekiliyor = true;
   baslangic = Date.now();
@@ -521,11 +522,13 @@ function kayitBitti() {
   const uzanti = tur.includes('mp4') ? 'mp4' : 'webm';
   const an = new Date();
   const ad = `solya-${String(an.getHours()).padStart(2, '0')}${String(an.getMinutes()).padStart(2, '0')}${String(an.getSeconds()).padStart(2, '0')}.${uzanti}`;
-  videoDosya = new File([blob], ad, { type: tur });
+  videoDosya = new File([blob], ad, { type: uzanti === 'mp4' ? 'video/mp4' : 'video/webm' });
   if (videoAdresi) URL.revokeObjectURL(videoAdresi);
   videoAdresi = URL.createObjectURL(blob);
   $('izle').src = videoAdresi;
-  $('ipucu').textContent = uzanti === 'webm' ? 'Bu telefon WebM kaydetti. Instagram için önce MP4\'e çevrilmeli.' : '';
+  $('ipucu').textContent = uzanti === 'webm'
+    ? "Bu telefon WebM kaydetti. Instagram için önce MP4'e çevrilmeli."
+    : navigator.canShare?.({ files: [videoDosya] }) ? "Açılan ekranda Videoyu Kaydet'e dokunun." : '';
   kaydedildi = false;
   ekranGoster('incelemeEkrani');
 }
