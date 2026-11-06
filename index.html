@@ -484,7 +484,7 @@ async function kaydiBaslat() {
   kaydedici = new MediaRecorder(akim, { mimeType: bicim || undefined, videoBitsPerSecond: BITRATE, audioBitsPerSecond: 192_000 });
   kaydedici.ondataavailable = (o) => { if (o.data.size) parcalar.push(o.data); };
   kaydedici.onstop = kayitBitti;
-  kaydedici.start();
+  kaydedici.start(1000); // Parçasız kayıtta iPhone Safari görüntüyü 15 sn civarı dondurur (WebKit hata 315091)
 
   cekiliyor = true;
   baslangic = Date.now();
