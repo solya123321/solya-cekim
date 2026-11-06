@@ -124,6 +124,8 @@ button { border: 0; background: none; padding: 0; cursor: pointer; touch-action:
 #incelemeEkrani { background: var(--komur); color: #fff; padding: calc(var(--ust) + 10px) 14px calc(var(--alt) + 14px); gap: 10px; }
 #izle { flex: 1; min-height: 0; width: 100%; background: #000; border-radius: 12px; object-fit: contain; }
 #kaydet { min-height: 64px; border-radius: 32px; background: var(--kirmizi); color: #fff; font-size: 25px; font-weight: 700; }
+#gonder { min-height: 56px; border-radius: 28px; border: 2px solid #fff; background: transparent; color: #fff; font-size: 23px; font-weight: 700; }
+#gonder:disabled { opacity: .55; }
 #ipucu { margin: 0; min-height: 24px; text-align: center; font-size: 19px; color: #C9C9CE; }
 #incelemeAlt { display: flex; justify-content: space-between; }
 #incelemeAlt button { min-height: 48px; padding: 0 6px; font-size: 21px; font-weight: 600; }
@@ -173,6 +175,7 @@ button { border: 0; background: none; padding: 0; cursor: pointer; touch-action:
 <section id="incelemeEkrani" class="ekran" hidden>
   <video id="izle" controls playsinline></video>
   <button id="kaydet" type="button">Videoyu kaydet</button>
+  <button id="gonder" type="button">GitHub'a yükle</button>
   <p id="ipucu" role="status"></p>
   <div id="incelemeAlt">
     <button id="tekrar" type="button">Yeniden çek</button>
@@ -530,6 +533,8 @@ function kayitBitti() {
     ? "Bu telefon WebM kaydetti. Instagram için önce MP4'e çevrilmeli."
     : navigator.canShare?.({ files: [videoDosya] }) ? "Açılan ekranda Videoyu Kaydet'e dokunun." : '';
   kaydedildi = false;
+  $('gonder').disabled = false;
+  $('gonder').textContent = "GitHub'a yükle";
   ekranGoster('incelemeEkrani');
 }
 
@@ -557,6 +562,76 @@ $('kaydet').onclick = async () => {
   a.click();
   kaydedildi = true;
   $('ipucu').textContent = 'Video indirilenlere kaydedildi.';
+};
+
+/* GitHub'a yükleme: gizli depo. Anahtar yalnız bu telefonda saklanır. */
+const KAYIT_DEPO = 'https://api.github.com/repos/solya123321/solya-cekim-kayit';
+const ANAHTAR_ADI = 'solya-cekim-github';
+const EN_BUYUK = 100 * 1024 * 1024; // GitHub'ın tek dosya sınırı
+
+function base64Oku(dosya) {
+  return new Promise((tamam, hata) => {
+    const o = new FileReader();
+    o.onload = () => tamam(o.result.slice(o.result.indexOf(',') + 1));
+    o.onerror = () => hata(o.error);
+    o.readAsDataURL(dosya);
+  });
+}
+
+function github(anahtar, yontem, yol, govde, ilerle) {
+  return new Promise((tamam, hata) => {
+    const x = new XMLHttpRequest();
+    x.open(yontem, `${KAYIT_DEPO}/${yol}`);
+    x.setRequestHeader('Authorization', `Bearer ${anahtar}`);
+    x.setRequestHeader('Accept', 'application/vnd.github+json');
+    if (ilerle) x.upload.onprogress = (o) => { if (o.lengthComputable) ilerle(Math.round((o.loaded / o.total) * 100)); };
+    x.onload = () => {
+      if (x.status >= 200 && x.status < 300) tamam(JSON.parse(x.responseText));
+      else hata(Object.assign(new Error('GitHub reddetti'), { kod: x.status }));
+    };
+    x.onerror = () => hata(new Error('Bağlantı kesildi'));
+    x.send(govde ?? null);
+  });
+}
+
+async function githubaYukle(anahtar) {
+  const ipucu = $('ipucu');
+  ipucu.textContent = 'Video hazırlanıyor...';
+  const ana = (await github(anahtar, 'GET', 'git/ref/heads/main')).object.sha;
+  const ustAgac = (await github(anahtar, 'GET', `git/commits/${ana}`)).tree.sha;
+  const icerik = await base64Oku(videoDosya);
+  const blob = await github(anahtar, 'POST', 'git/blobs', `{"encoding":"base64","content":"${icerik}"}`, (y) => { ipucu.textContent = `Yükleniyor: %${y}`; });
+  ipucu.textContent = 'Kayıt tamamlanıyor...';
+  const an = new Date();
+  const gun = `${an.getFullYear()}-${String(an.getMonth() + 1).padStart(2, '0')}-${String(an.getDate()).padStart(2, '0')}`;
+  const agac = await github(anahtar, 'POST', 'git/trees', JSON.stringify({ base_tree: ustAgac, tree: [{ path: `kayitlar/${gun}/${videoDosya.name}`, mode: '100644', type: 'blob', sha: blob.sha }] }));
+  const kayit = await github(anahtar, 'POST', 'git/commits', JSON.stringify({ message: videoDosya.name, tree: agac.sha, parents: [ana] }));
+  await github(anahtar, 'PATCH', 'git/refs/heads/main', JSON.stringify({ sha: kayit.sha }));
+}
+
+$('gonder').onclick = async () => {
+  const ipucu = $('ipucu');
+  if (videoDosya.size > EN_BUYUK) {
+    ipucu.textContent = "Video 100 MB'tan büyük. Videoyu kaydet ile alın.";
+    return;
+  }
+  const anahtar = localStorage.getItem(ANAHTAR_ADI) || prompt('GitHub anahtarını yapıştırın. Yalnız bu telefonda saklanır.')?.trim();
+  if (!anahtar) return;
+  const d = $('gonder');
+  d.disabled = true;
+  try {
+    await githubaYukle(anahtar);
+    localStorage.setItem(ANAHTAR_ADI, anahtar);
+    kaydedildi = true;
+    d.textContent = 'Yüklendi';
+    ipucu.textContent = "Video GitHub'a yüklendi.";
+  } catch (h) {
+    d.disabled = false;
+    if (h.kod === 401 || h.kod === 403 || h.kod === 404) {
+      localStorage.removeItem(ANAHTAR_ADI);
+      ipucu.textContent = 'Anahtar kabul edilmedi. Tuşa basıp yeniden girin.';
+    } else ipucu.textContent = h.kod ? `Yüklenemedi (hata ${h.kod}). Yeniden deneyin.` : 'İnternet bağlantısı kesildi. Yeniden deneyin.';
+  }
 };
 
 function cekimiBirak() {
